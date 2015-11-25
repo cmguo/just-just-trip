@@ -5,7 +5,7 @@
 #include "just/trip/Error.h"
 #include "just/trip/ClassRegister.h"
 
-#include <just/trip_worker/Name.h>
+#include <p2p/trip/worker/Name.h>
 
 #ifndef JUST_DISABLE_DAC
 #include <just/dac/DacModule.h>
@@ -14,12 +14,16 @@ using namespace just::dac;
 #endif
 
 #ifdef JUST_CONTAIN_TRIP_WORKER
-namespace just { namespace trip_worker {
+#include <framework/process/Environments.h>
+using namespace framework::process;
+namespace trip { namespace worker {
     void register_module(util::daemon::Daemon & daemon);
 }}
 #else
 #include <framework/process/Process.h>
+#include <framework/process/ProcessEnviron.h>
 #include <framework/timer/Timer.h>
+#include <framework/string/Url.h>
 using namespace framework::timer;
 using namespace framework::process;
 #endif
@@ -47,40 +51,25 @@ namespace just
 #ifndef JUST_DISABLE_DAC
             , dac_(util::daemon::use_module<just::dac::DacModule>(daemon))
 #endif
-            , portMgr_(util::daemon::use_module<just::common::PortManager>(daemon))
-            , port_(9000)
+            , port_("2015")
 #ifndef JUST_CONTAIN_TRIP_WORKER
             , mutex_(9000)
             , is_locked_(false)
 #endif
         {
 #ifdef JUST_CONTAIN_TRIP_WORKER
-            just::trip_worker::register_module(daemon);
+            ::trip::worker::register_module(daemon);
 #else
             process_ = new Process;
             timer_ = new Timer(timer_queue(), 
                     10, // 5 seconds
                 boost::bind(&TripModule::check, this));
 #endif
-
-            just::trip_worker::ClientStatus::set_pool(framework::memory::BigFixedPool(
-                framework::memory::MemoryReference<framework::memory::SharedMemory>(shared_memory())));
-
-            stats_ = (framework::container::List<just::trip_worker::ClientStatus> *)shared_memory()
-                .alloc_with_id(SHARED_OBJECT_ID_DEMUX, sizeof(framework::container::List<just::trip_worker::ClientStatus>));
-            if (!stats_)
-                stats_ = (framework::container::List<just::trip_worker::ClientStatus> *)shared_memory()
-                .get_by_id(SHARED_OBJECT_ID_DEMUX);
-            new (stats_) framework::container::List<just::trip_worker::ClientStatus>;
         }
 
         TripModule::~TripModule()
         {
-            just::trip_worker::ClientStatus::set_pool(framework::memory::BigFixedPool(
-                framework::memory::PrivateMemory()));
-
 #ifndef JUST_CONTAIN_TRIP_WORKER
-
             if (is_lock()) {
                 mutex_.unlock();
                 is_locked_ = false;
@@ -107,33 +96,28 @@ namespace just
 #endif
 #ifndef JUST_CONTAIN_TRIP_WORKER
             timer_->start();
-
             if (is_lock()) {
                 LOG_INFO("[startup] try_lock");
 #ifdef __APPLE__
                 boost::filesystem::path cmd_file(MAC_TRIP_WORKER);
 #else
-                boost::filesystem::path cmd_file(just::trip_worker::name_string());
+                boost::filesystem::path cmd_file(name());
 #endif
                 Process::CreateParamter param;
                 param.wait = true;
                 process_->open(cmd_file, param, ec);
                 if (!ec) {
-                    portMgr_.get_port(just::common::vod,port_);
-                    LOG_INFO("[startup] ok port:"<<port_);
+                    update_port();
                 } else {
                     LOG_WARN("[startup] ec = " << ec.message());
-                    port_ = 0;
                     if (ec == boost::system::errc::no_such_file_or_directory) {
                         ec.clear();
                     }
-
                     timer_->stop();
                 }
             }
 #else
-            portMgr_.get_port(just::common::vod,port_);
-            LOG_INFO("[startup] ok port:"<<port_);
+            update_port();
 #endif
             return !ec;
         }
@@ -141,6 +125,7 @@ namespace just
         bool TripModule::shutdown(
             error_code & ec)
         {
+            port_.clear();
 #ifndef JUST_CONTAIN_TRIP_WORKER
             if (process_) {
                 process_->signal(Signal::sig_int, ec);
@@ -171,7 +156,7 @@ namespace just
             if (is_lock()) {
                 if (process_ && !process_->is_alive(ec)) {
                     LOG_ERROR("[check] worker is dead: " << ec.message());
-
+                    port_.clear();
 #ifndef JUST_DISABLE_DAC
                     util::daemon::use_module<just::dac::DacModule>(get_daemon())
                         .submit(DacRestartInfo(DacRestartInfo::vod));
@@ -180,18 +165,15 @@ namespace just
 #ifdef __APPLE__
                     boost::filesystem::path cmd_file(MAC_TRIP_WORKER);
 #else
-                    boost::filesystem::path cmd_file(just::trip_worker::name_string());
+                    boost::filesystem::path cmd_file(name());
 #endif
                     Process::CreateParamter param;
                     param.wait = true;
                     process_->open(cmd_file, param, ec);
                     if (!ec) {
-                        portMgr_.get_port(just::common::vod,port_);
-                        LOG_INFO("[check] ok port:"<<port_);
+                        update_port();
                     } else {
                         LOG_WARN("[check] ec = " << ec.message());
-                        port_ = 0;
-
                         timer_->stop();
                     }
                 }
@@ -213,7 +195,7 @@ namespace just
 #ifdef __APPLE__
                 boost::filesystem::path cmd_file(MAC_TRIP_WORKER);
 #else
-                boost::filesystem::path cmd_file(just::trip_worker::name_string());
+                boost::filesystem::path cmd_file(name());
 #endif
                 process.open(cmd_file, ec);
                 return !ec;
@@ -229,7 +211,15 @@ namespace just
 
         std::string TripModule::name()
         {
-            return just::trip_worker::name_string();
+            return ::trip::worker::name_string();
+        }
+
+        framework::string::Url & TripModule::get_p2p_url(
+            framework::string::Url const & cdn_url, 
+            framework::string::Url & url)
+        {
+            return TripSource::get_p2p_url(
+                cdn_url, port_, url);
         }
 
 #ifndef JUST_CONTAIN_TRIP_WORKER
@@ -242,6 +232,18 @@ namespace just
             return is_locked_;
         }
 #endif
+
+        void TripModule::update_port()
+        {
+            /*
+#ifndef JUST_CONTAIN_TRIP_WORKER
+            get_process_environ(process_->id(), ENVIRON_HTTP_PORT, port_);
+#else
+            port_ = get_environment(ENVIRON_HTTP_PORT);
+#endif
+*/
+            LOG_INFO("[update_port] port = " << port_); 
+        }
 
     } // namespace trip
 } // namespace just

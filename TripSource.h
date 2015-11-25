@@ -5,7 +5,7 @@
 
 #include "just/trip/TripModule.h"
 
-#include <just/cdn/pptv/P2pSource.h>
+#include <just/cdn/p2p/P2pSource.h>
 
 namespace just
 {
@@ -38,12 +38,20 @@ namespace just
 
             bool use_trip();
 
+        public:
+            static framework::string::Url & get_p2p_url(
+                framework::string::Url const & cdn_url, 
+                std::string const & port, 
+                framework::string::Url & url);
+
         protected:
             TripModule & module_;
 
         private:
             bool trip_fail_;
         };
+
+        UTIL_REGISTER_URL_SOURCE("trip", TripSource);
 
     } // namespace trip
 } // namespace just

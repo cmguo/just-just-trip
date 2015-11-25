@@ -3,22 +3,20 @@
 #ifndef _JUST_TRIP_TRIP_MODULE_H_
 #define _JUST_TRIP_TRIP_MODULE_H_
 
-#include <just/common/PortManager.h>
-#include <just/trip_worker/ClientStatus.h>
-
 #ifndef JUST_DISABLE_DAC
 #include <just/dac/DacModule.h>
 #endif
 
 #ifndef JUST_CONTAIN_TRIP_WORKER
 #include <framework/process/NamedMutex.h>
+#endif
 
 namespace framework
 {
     namespace process { class Process; }
     namespace timer { class Timer; }
+    namespace string { class Url; }
 }
-#endif
 
 namespace just
 {
@@ -43,7 +41,7 @@ namespace just
                 boost::system::error_code & ec);
 
         public:
-            boost::uint16_t port() const
+            std::string port() const
             {
                 return port_;
             }
@@ -52,7 +50,7 @@ namespace just
 
 #ifndef JUST_CONTAIN_TRIP_WORKER
             framework::process::Process const & process() const
-            {
+           {
                 return *process_;
             }
 #endif
@@ -62,19 +60,22 @@ namespace just
 
             static std::string name();
 
+            framework::string::Url & get_p2p_url(
+                framework::string::Url const & cdn_url, 
+                framework::string::Url & url);
+
         private:
             void check();
 
             bool is_lock();
 
+            void update_port();
+
         private:
 #ifndef JUST_DISABLE_DAC
             just::dac::DacModule& dac_;
 #endif
-            just::common::PortManager &portMgr_;
-
-            boost::uint16_t port_;
-
+            std::string port_;
 #ifndef JUST_CONTAIN_TRIP_WORKER
         private:
             framework::process::Process * process_;

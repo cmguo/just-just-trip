@@ -3,7 +3,7 @@
 #include "just/trip/Common.h"
 #include "just/trip/TripSource.h"
 
-#include <just/cdn/pptv/PptvMedia.h>
+#include <just/cdn/trip/TripMedia.h>
 
 #include <just/demux/base/DemuxEvent.h>
 #include <just/demux/segment/SegmentDemuxer.h>
@@ -15,6 +15,8 @@
 #include <framework/logger/Logger.h>
 #include <framework/logger/StreamRecord.h>
 #include <framework/string/Format.h>
+#include <framework/string/Md5.h>
+#include <framework/string/Digest.hpp>
 using namespace framework::string;
 
 namespace just
@@ -50,18 +52,9 @@ namespace just
             boost::uint64_t & end, 
             boost::system::error_code & ec)
         {
-            LOG_DEBUG("Use trip worker, BWType: " << pptv_media().jump().bw_type);
+            LOG_DEBUG("Use trip worker");
 
-            std::string cdn_url = url.to_string();
-            url = framework::string::Url();
-            url.protocol("http");
-            url.host("127.0.0.1");
             url.svc(format(module_.port()));
-            url.param("url", cdn_url);
-            url.param("BWType", format(pptv_media().jump().bw_type));
-            url.param("autoclose", "false");
-
-            url.encode();
 
             ec.clear();
             return true;
@@ -71,8 +64,21 @@ namespace just
         {
             if (!trip_fail_ && seg_source().num_try() > 3)
                 trip_fail_ = true;
-            return module_.port() > 0 && !trip_fail_ && pptv_media().jump().bw_type != 100;
+            return !module_.port().empty() && !trip_fail_;
         }
+
+        framework::string::Url & TripSource::get_p2p_url(
+            framework::string::Url const & cdn_url, 
+            std::string const & port, 
+            framework::string::Url & url)
+        {
+            url.from_string("http://127.0.0.1/meta");
+            url.svc(port);
+            url.param("url", cdn_url.to_string());
+            url.param("session", md5(cdn_url.to_string()).to_string());
+            return url;
+        }
+
 
     } // namespace trip
 } // namespace just

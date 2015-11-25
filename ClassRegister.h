@@ -5,7 +5,6 @@
 
 #include <util/tools/ClassRegister.h>
 
-#include "just/trip/VodTripSource.h"
-#include "just/trip/LiveTripSource.h"
+#include "just/trip/TripSource.h"
 
 #endif //_JUST_TRIP_CLASS_REGISTER_H_
