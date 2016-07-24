@@ -21,7 +21,6 @@ namespace trip { namespace worker {
 }}
 #else
 #include <framework/process/Process.h>
-#include <framework/process/ProcessEnviron.h>
 #include <framework/timer/Timer.h>
 #include <framework/string/Url.h>
 using namespace framework::timer;
