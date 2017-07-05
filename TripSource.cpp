@@ -8,8 +8,6 @@
 #include <just/demux/base/DemuxEvent.h>
 #include <just/demux/segment/SegmentDemuxer.h>
 
-#include <just/merge/MergerBase.h>
-
 #include <just/data/segment/SegmentSource.h>
 
 #include <framework/logger/Logger.h>
